@@ -8,14 +8,14 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 모델명을 정식 명칭인 'gemini-2.0-flash'로 완벽 교체
+# 🔮 모델명을 정식 명칭인 'gemini-3.8-flash'로 완벽 교체
 @str.cache_resource
 def load_llm():
     if "GEMINI_API_KEY" in str.secrets:
         api_key = str.secrets["GEMINI_API_KEY"]
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model="gemini-3.8-flash", google_api_key=api_key)
     try:
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+        return ChatGoogleGenerativeAI(model="gemini-3.8-flash")
     except Exception:
         return None
 
