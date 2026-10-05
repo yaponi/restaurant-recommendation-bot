@@ -16,7 +16,7 @@ def load_llm():
         # 스트림릿 서버에 숨겨놓은 안전한 비밀키(Secrets)를 자동으로 가져옵니다.
         api_key = str.secrets["GEMINI_API_KEY"]
         # 가장 빠르고 가성비 좋은 구글의 gemini-1.5-flash 모델을 장착합니다.
-        return ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
     except Exception as e:
         # 내 컴퓨터에서 로컬로 테스트할 때는 .env나 시스템 환경변수의 키를 찾습니다.
         try:
