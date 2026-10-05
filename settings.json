@@ -1,0 +1,11 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python.analysis.extraPaths": [
+        "./.venv/lib/site-packages",
+        "../.venv/lib/site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./.venv/lib/site-packages",
+        "../.venv/lib/site-packages"
+    ]
+}
