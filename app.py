@@ -8,17 +8,16 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 모델명을 정식 명칭인 'gemini-2.0-flash'로 교체 완료
+# 🔮 모델명을 정식 명칭인 'gemini-2.0-flash'로 완벽 교체
 @str.cache_resource
 def load_llm():
-    try:
+    if "GEMINI_API_KEY" in str.secrets:
         api_key = str.secrets["GEMINI_API_KEY"]
         return ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key)
-    except Exception as e:
-        try:
-            return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-        except:
-            return None
+    try:
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+    except Exception:
+        return None
 
 llm = load_llm()
 
@@ -45,7 +44,7 @@ if user_input:
     str.session_state["chat_history"].append({"role": "user", "content": user_input})
     
     if llm is None:
-        str.error("🚨 구글 AI API 키 설정이 올바르지 않거나 켜지지 않았습니다! secrets 설정을 확인해 주세요.")
+        str.error("🚨 구글 AI API 키를 찾을 수 없습니다! 스트림릿 관리자 화면의 Advanced settings ➡️ Secrets 칸에 GEMINI_API_KEY가 올바르게 입력되었는지 확인해 주세요.")
     else:
         history_text = "\n".join([f"{c['role']}: {c['content']}" for c in str.session_state["chat_history"][:-1]])
         
@@ -61,73 +60,77 @@ if user_input:
         [현재 사용자 질문]: {user_input}
         [분류 결과]:"""
         
-        user_intent = llm.invoke(routing_prompt).content.strip()
-        
-        # 🎯 시나리오 A: 맛집 추천 실행
-        if "추천" in user_intent:
-            tag_prompt = f"""
-            너는 사용자의 질문과 과거 대화 맥락을 분석해서 맛집 검색용 키워드 태그를 딱 하나만 뽑아내는 천재 에이전트야.
-            유저의 이전 대화와 현재 답변을 종합해서 아래 목록 중 하나만 골라야 해.
-            설명 없이 오직 단어 '한 개'만 출력해.
+        try:
+            user_intent = llm.invoke(routing_prompt).content.strip()
+            
+            # 🎯 시나리오 A: 맛집 추천 실행
+            if "추천" in user_intent:
+                tag_prompt = f"""
+                너는 사용자의 질문과 과거 대화 맥락을 분석해서 맛집 검색용 키워드 태그를 딱 하나만 뽑아내는 천재 에이전트야.
+                유저의 이전 대화와 현재 답변을 종합해서 아래 목록 중 하나만 골라야 해.
+                설명 없이 오직 단어 '한 개'만 출력해.
 
-            [선택 가능한 엑셀 태그 목록]: 상견례, 데이트, 회식, 카페, 혼밥, 가족식사, 가성비
-            [과거 대화 기록]:
-            {history_text}
-            
-            [현재 사용자 질문]: {user_input}
-            [AI 에이전트의 선택 단어]:"""
-            
-            ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
-            
-            try:
-                df = pd.read_csv("restaurants.csv")
-                filtered_df = df[df['tags'].str.contains(ai_extracted_tag, na=False)].copy()
+                [선택 가능한 엑셀 태그 목록]: 상견례, 데이트, 회식, 카페, 혼밥, 가족식사, 가성비
+                [과거 대화 기록]:
+                {history_text}
                 
-                if filtered_df.empty:
-                    fail_prompt = f"너는 다정한 매니저야. '{ai_extracted_tag}'에 맞는 맛집이 없어. 정중히 양해를 구하는 멘트를 2문장 이내로 써줘."
-                    ai_reply = llm.invoke(fail_prompt).content
-                    str.chat_message("assistant").write(ai_reply)
-                    str.session_state["chat_history"].append({"role": "assistant", "content": ai_reply})
-                else:
-                    filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
-                    final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
-                    
-                    # 🛠️ [문법 에러 완벽 수정!] iloc 기반 식당 이름 추출 방식 정상화
-                    top_restaurant_name = final_result.iloc[0]['name']
-                    
-                    story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
-                    ai_serving_ment = llm.invoke(story_prompt).content
-                    
-                    str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
-                    str.chat_message("assistant").write(ai_serving_ment)
-                    
-                    for index, row in final_result.iterrows():
-                        with str.expander(f"👑 {row['name']} ({row['category']}) - 점수: {row['score']:.1f}점"):
-                            str.write(f"⭐️ **대중 평점:** {row['rating']}점 / 💬 **리뷰 수:** {row['review_count']}개")
-                            str.write(f"🏷️ **이 식당의 특징:** {row['tags']}")
-                            if pd.notna(row['image_url']):
-                                str.image(row['image_url'], caption=f"{row['name']} 전경/음식 이미지", width=350)
-                                
-                    str.session_state["chat_history"].append({
-                        "role": "assistant", 
-                        "content": f"🧠 AI 분석 완료: [{ai_extracted_tag}] 상황 추천\n" + ai_serving_ment,
-                        "results": final_result
-                    })
-            except FileNotFoundError:
-                str.error("restaurants.csv 파일이 없습니다.")
+                [현재 사용자 질문]: {user_input}
+                [AI 에이전트의 선택 단어]:"""
                 
-        # 🎯 시나리오 B: 일상 대화 및 유도
-        else:
-            chat_guide_prompt = f"""
-            너는 대구 복현동/영진전문대 맛집 웹의 AI 마스코트야. 이전 대화 기록을 참고해서 유저의 말에 대답해야 해.
-            [과거 기록]: {history_text}
-            [현재 유저의 말]: "{user_input}"
-            
-            대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
-            """
-            ai_chat_response = llm.invoke(chat_guide_prompt).content
-            str.chat_message("assistant").write(ai_chat_response)
-            str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
+                ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
+                
+                try:
+                    df = pd.read_csv("restaurants.csv")
+                    filtered_df = df[df['tags'].str.contains(ai_extracted_tag, na=False)].copy()
+                    
+                    if filtered_df.empty:
+                        fail_prompt = f"너는 다정한 매니저야. '{ai_extracted_tag}'에 맞는 맛집이 없어. 정중히 양해를 구하는 멘트를 2문장 이내로 써줘."
+                        ai_reply = llm.invoke(fail_prompt).content
+                        str.chat_message("assistant").write(ai_reply)
+                        str.session_state["chat_history"].append({"role": "assistant", "content": ai_reply})
+                    else:
+                        filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
+                        final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
+                        
+                        # 🛠️ [iloc 버그 완벽 수정!] .iloc[0]['name'] 구조로 안전하게 데이터 추출하도록 조치 [1]
+                        top_restaurant_name = final_result.iloc[0]['name']
+                        
+                        story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
+                        ai_serving_ment = llm.invoke(story_prompt).content
+                        
+                        str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
+                        str.chat_message("assistant").write(ai_serving_ment)
+                        
+                        for index, row in final_result.iterrows():
+                            with str.expander(f"👑 {row['name']} ({row['category']}) - 점수: {row['score']:.1f}점"):
+                                str.write(f"⭐️ **대중 평점:** {row['rating']}점 / 💬 **리뷰 수:** {row['review_count']}개")
+                                str.write(f"🏷️ **이 식당의 특징:** {row['tags']}")
+                                if pd.notna(row['image_url']):
+                                    str.image(row['image_url'], caption=f"{row['name']} 전경/음식 이미지", width=350)
+                                    
+                        str.session_state["chat_history"].append({
+                            "role": "assistant", 
+                            "content": f"🧠 AI 분석 완료: [{ai_extracted_tag}] 상황 추천\n" + ai_serving_ment,
+                            "results": final_result
+                        })
+                except FileNotFoundError:
+                    str.error("restaurants.csv 파일이 없습니다.")
+                    
+            # 🎯 시나리오 B: 일상 대화 및 유도
+            else:
+                chat_guide_prompt = f"""
+                너는 대구 복현동/영진전문대 맛집 웹의 AI 마스코트야. 이전 대화 기록을 참고해서 유저의 말에 대답해야 해.
+                [과거 기록]: {history_text}
+                [현재 유저의 말]: "{user_input}"
+                
+                대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
+                """
+                ai_chat_response = llm.invoke(chat_guide_prompt).content
+                str.chat_message("assistant").write(ai_chat_response)
+                str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
+        
+        except Exception as api_err:
+            str.error(f"🚨 구글 API 통신 에러 발생: {api_err}\n\nSecrets 금고에 복사해 넣으신 API 키에 오타가 있거나, 구글 AI 스튜디오 측의 무료 Tier 연동 지연일 수 있습니다. 금고의 키 값을 다시 확인해 주세요.")
 
 # 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
 character_image_url = "https://tse4.mm.bing.net/th/id/OIP.95620q0SRD92J15XFWne5QHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" 
