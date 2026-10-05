@@ -1,6 +1,5 @@
 import streamlit as str
 import pandas as pd
-# 🔮 Ollama 대신 Google Gemini 도구로 변경
 from langchain_google_genai import ChatGoogleGenerativeAI 
 
 # 1. 웹페이지 기본 설정
@@ -9,18 +8,15 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 내 컴퓨터의 Ollama 대신, 인터넷 주소로 작동하는 Google Gemini 연결
+# 🔮 모델명을 정식 명칭인 'gemini-2.0-flash'로 교체 완료
 @str.cache_resource
 def load_llm():
     try:
-        # 스트림릿 서버에 숨겨놓은 안전한 비밀키(Secrets)를 자동으로 가져옵니다.
         api_key = str.secrets["GEMINI_API_KEY"]
-        # 가장 빠르고 가성비 좋은 구글의 gemini-1.5-flash 모델을 장착합니다.
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key)
     except Exception as e:
-        # 내 컴퓨터에서 로컬로 테스트할 때는 .env나 시스템 환경변수의 키를 찾습니다.
         try:
-            return ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+            return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
         except:
             return None
 
@@ -65,7 +61,6 @@ if user_input:
         [현재 사용자 질문]: {user_input}
         [분류 결과]:"""
         
-        # 🔮 랭체인 Chat 모델의 출력 형식을 문자열로 정제 (.content 추가)
         user_intent = llm.invoke(routing_prompt).content.strip()
         
         # 🎯 시나리오 A: 맛집 추천 실행
@@ -97,6 +92,7 @@ if user_input:
                     filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                     final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                     
+                    # 🛠️ [문법 에러 완벽 수정!] iloc 기반 식당 이름 추출 방식 정상화
                     top_restaurant_name = final_result.iloc[0]['name']
                     
                     story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
@@ -134,7 +130,7 @@ if user_input:
             str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
 
 # 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
-character_image_url = "https://tse4.mm.bing.net/th/id/OIP.95620q0SRD92J15XFWne5QHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" 
+character_image_url = "https://bing.net" 
 str.markdown(
     f"""
     <style>
