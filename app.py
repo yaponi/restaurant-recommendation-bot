@@ -130,7 +130,7 @@ if user_input:
             str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
 
 # 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
-character_image_url = "https://bing.net" 
+character_image_url = "https://tse4.mm.bing.net/th/id/OIP.95620q0SRD92J15XFWne5QHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" 
 str.markdown(
     f"""
     <style>
