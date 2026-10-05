@@ -20,7 +20,7 @@ def load_llm():
     except Exception as e:
         # 내 컴퓨터에서 로컬로 테스트할 때는 .env나 시스템 환경변수의 키를 찾습니다.
         try:
-            return ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+            return ChatGoogleGenerativeAI(model="gemini-2.5-flash")
         except:
             return None
 
