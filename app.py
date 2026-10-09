@@ -1,6 +1,6 @@
 import streamlit as str
 import pandas as pd
-from langchain_google_genai import ChatGoogleGenerativeAI 
+from g4f.client import Client
 
 # 1. 웹페이지 기본 설정
 str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon="🍚", layout="wide")
@@ -8,18 +8,15 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 모델명을 정식 명칭인 'gemini-2.5-flash'로 완벽 교체
+# 🔮 g4f 클라이언트를 캐싱하여 로드 (API 키 불필요)
 @str.cache_resource
 def load_llm():
-    if "GEMINI_API_KEY" in str.secrets:
-        api_key = str.secrets["GEMINI_API_KEY"]
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
     try:
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+        return Client()
     except Exception:
         return None
 
-llm = load_llm()
+client = load_llm()
 
 # 비로그인 유저의 과거 대화 기록을 기억하는 메모리 장치 세팅
 if "chat_history" not in str.session_state:
@@ -43,8 +40,8 @@ if user_input:
     str.chat_message("user").write(user_input)
     str.session_state["chat_history"].append({"role": "user", "content": user_input})
     
-    if llm is None:
-        str.error("🚨 구글 AI API 키를 찾을 수 없습니다! 스트림릿 관리자 화면의 Advanced settings ➡️ Secrets 칸에 GEMINI_API_KEY가 올바르게 입력되었는지 확인해 주세요.")
+    if client is None:
+        str.error("🚨 AI 클라이언트를 초기화하지 못했습니다. 패키지 설치 상태를 확인해 주세요.")
     else:
         history_text = "\n".join([f"{c['role']}: {c['content']}" for c in str.session_state["chat_history"][:-1]])
         
@@ -61,7 +58,12 @@ if user_input:
         [분류 결과]:"""
         
         try:
-            user_intent = llm.invoke(routing_prompt).content.strip()
+            # 🔄 g4f 문법에 맞게 invoke 대신 client.chat.completions.create 사용
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": routing_prompt}]
+            )
+            user_intent = response.choices[0].message.content.strip()
             
             # 🎯 시나리오 A: 맛집 추천 실행
             if "추천" in user_intent:
@@ -77,7 +79,11 @@ if user_input:
                 [현재 사용자 질문]: {user_input}
                 [AI 에이전트의 선택 단어]:"""
                 
-                ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
+                tag_response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": tag_prompt}]
+                )
+                ai_extracted_tag = tag_response.choices[0].message.content.strip()
                 
                 try:
                     df = pd.read_csv("restaurants.csv")
@@ -85,18 +91,25 @@ if user_input:
                     
                     if filtered_df.empty:
                         fail_prompt = f"너는 다정한 매니저야. '{ai_extracted_tag}'에 맞는 맛집이 없어. 정중히 양해를 구하는 멘트를 2문장 이내로 써줘."
-                        ai_reply = llm.invoke(fail_prompt).content
+                        fail_response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[{"role": "user", "content": fail_prompt}]
+                        )
+                        ai_reply = fail_response.choices[0].message.content
                         str.chat_message("assistant").write(ai_reply)
                         str.session_state["chat_history"].append({"role": "assistant", "content": ai_reply})
                     else:
                         filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                         final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                         
-                        # 🛠️ [iloc 버그 완벽 수정!] .iloc[0]['name'] 구조로 안전하게 데이터 추출하도록 조치 [1]
                         top_restaurant_name = final_result.iloc[0]['name']
                         
                         story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
-                        ai_serving_ment = llm.invoke(story_prompt).content
+                        story_response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[{"role": "user", "content": story_prompt}]
+                        )
+                        ai_serving_ment = story_response.choices[0].message.content
                         
                         str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
                         str.chat_message("assistant").write(ai_serving_ment)
@@ -125,12 +138,16 @@ if user_input:
                 
                 대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
                 """
-                ai_chat_response = llm.invoke(chat_guide_prompt).content
+                chat_response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": chat_guide_prompt}]
+                )
+                ai_chat_response = chat_response.choices[0].message.content
                 str.chat_message("assistant").write(ai_chat_response)
                 str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
         
         except Exception as api_err:
-            str.error(f"🚨 구글 API 통신 에러 발생: {api_err}\n\nSecrets 금고에 복사해 넣으신 API 키에 오타가 있거나, 구글 AI 스튜디오 측의 무료 Tier 연동 지연일 수 있습니다. 금고의 키 값을 다시 확인해 주세요.")
+            str.error(f"🚨 AI 서비스 통신 에러 발생: {api_err}\n\n무료 서버 우회 공급망의 일시적인 혼잡일 수 있습니다. 잠시 후 다시 시도해 주세요.")
 
 # 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
 character_image_url = "https://tse4.mm.bing.net/th/id/OIP.95620q0SRD92J15XFWne5QHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" 
@@ -152,3 +169,4 @@ str.markdown(
     """, 
     unsafe_allow_html=True
 )
+
