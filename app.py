@@ -23,13 +23,15 @@ def load_llm():
         
     # 3. 키가 있다면 안전하게 모델 생성
     try:
-        # 최신 모델명 명시 및 안전한 연결 구조 설계
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
+        # ⚠️ 중요: 단종된 2.5 대신 최신 지원 모델인 gemini-3.8-flash로 수정완료
+        return ChatGoogleGenerativeAI(model="gemini-3.8-flash", google_api_key=api_key)
     except Exception as init_err:
         str.error(f"🚨 모델 초기화 중 오류가 발생했습니다: {init_err}")
         return None
 
+# LLM 모델 로드
 llm = load_llm()
+
 
 # 비로그인 유저의 과거 대화 기록을 기억하는 메모리 장치 세팅
 if "chat_history" not in str.session_state:
