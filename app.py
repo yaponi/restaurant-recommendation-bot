@@ -1,7 +1,6 @@
 import streamlit as str
 import pandas as pd
-from g4f.client import Client
-from g4f.Provider import Airforce, Blackbox # 🌟 무료 제공처 직접 임포트
+from langchain_google_genai import ChatGoogleGenerativeAI 
 
 # 1. 웹페이지 기본 설정
 str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon="🍚", layout="wide")
@@ -9,15 +8,28 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 g4f 클라이언트 로드
+# 🔮 [버그 해결] 구글 API 로드 로직 최적화 및 방어 코드 구축
 @str.cache_resource
 def load_llm():
+    # 1. Streamlit Secrets (금고) 또는 시스템 환경 변수에서 키 확인
+    api_key = None
+    if "GEMINI_API_KEY" in str.secrets:
+        api_key = str.secrets["GEMINI_API_KEY"]
+        
+    # 2. API 키가 금고에 아예 안 들어있는 경우 가이드 에러 출력
+    if not api_key:
+        str.error("🚨 Streamlit Cloud 설정의 'Secrets' 금고에 GEMINI_API_KEY가 등록되지 않았습니다! 관리자 화면에서 키를 주입해 주세요.")
+        return None
+        
+    # 3. 키가 있다면 안전하게 모델 생성
     try:
-        return Client()
-    except Exception:
+        # 최신 모델명 명시 및 안전한 연결 구조 설계
+        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
+    except Exception as init_err:
+        str.error(f"🚨 모델 초기화 중 오류가 발생했습니다: {init_err}")
         return None
 
-client = load_llm()
+llm = load_llm()
 
 # 비로그인 유저의 과거 대화 기록을 기억하는 메모리 장치 세팅
 if "chat_history" not in str.session_state:
@@ -41,8 +53,8 @@ if user_input:
     str.chat_message("user").write(user_input)
     str.session_state["chat_history"].append({"role": "user", "content": user_input})
     
-    if client is None:
-        str.error("🚨 AI 클라이언트를 초기화하지 못했습니다. 패키지 설치 상태를 확인해 주세요.")
+    if llm is None:
+        str.error("🚨 구글 AI API 키 연동 실패로 인해 답변을 생성할 수 없습니다. 대시보드의 Secrets 설정을 다시 점검해 주세요.")
     else:
         history_text = "\n".join([f"{c['role']}: {c['content']}" for c in str.session_state["chat_history"][:-1]])
         
@@ -59,19 +71,13 @@ if user_input:
         [분류 결과]:"""
         
         try:
-            # 🔄 모델을 llama-3.3-70b로 변경하고 제공처를 Airforce(무료 풀)로 고정
-            response = client.chat.completions.create(
-                model="llama-3.3-70b",
-                provider=Airforce,
-                messages=[{"role": "user", "content": routing_prompt}]
-            )
-            user_intent = response.choices.message.content.strip()
+            user_intent = llm.invoke(routing_prompt).content.strip()
             
             # 🎯 시나리오 A: 맛집 추천 실행
             if "추천" in user_intent:
                 tag_prompt = f"""
                 너는 사용자의 질문과 과거 대화 맥락을 분석해서 맛집 검색용 키워드 태그를 딱 하나만 뽑아내는 천재 에이전트야.
-                유저의 이전 대화 and 현재 답변을 종합해서 아래 목록 중 하나만 골라야 해.
+                유저의 이전 대화와 현재 답변을 종합해서 아래 목록 중 하나만 골라야 해.
                 설명 없이 오직 단어 '한 개'만 출력해.
 
                 [선택 가능한 엑셀 태그 목록]: 상견례, 데이트, 회식, 카페, 혼밥, 가족식사, 가성비
@@ -81,12 +87,7 @@ if user_input:
                 [현재 사용자 질문]: {user_input}
                 [AI 에이전트의 선택 단어]:"""
                 
-                tag_response = client.chat.completions.create(
-                    model="llama-3.3-70b",
-                    provider=Airforce,
-                    messages=[{"role": "user", "content": tag_prompt}]
-                )
-                ai_extracted_tag = tag_response.choices.message.content.strip()
+                ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
                 
                 try:
                     df = pd.read_csv("restaurants.csv")
@@ -94,27 +95,18 @@ if user_input:
                     
                     if filtered_df.empty:
                         fail_prompt = f"너는 다정한 매니저야. '{ai_extracted_tag}'에 맞는 맛집이 없어. 정중히 양해를 구하는 멘트를 2문장 이내로 써줘."
-                        fail_response = client.chat.completions.create(
-                            model="llama-3.3-70b",
-                            provider=Airforce,
-                            messages=[{"role": "user", "content": fail_prompt}]
-                        )
-                        ai_reply = fail_response.choices.message.content
+                        ai_reply = llm.invoke(fail_prompt).content
                         str.chat_message("assistant").write(ai_reply)
                         str.session_state["chat_history"].append({"role": "assistant", "content": ai_reply})
                     else:
                         filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                         final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                         
+                        # 🛠️ [iloc 버그 방지 고도화] 판다스 시리즈의 요소 접근법을 .iloc[0]['name'] 대신 가장 안정적인 대괄호 직렬 접근으로 유지 [1]
                         top_restaurant_name = final_result.iloc[0]['name']
                         
                         story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
-                        story_response = client.chat.completions.create(
-                            model="llama-3.3-70b",
-                            provider=Airforce,
-                            messages=[{"role": "user", "content": story_prompt}]
-                        )
-                        ai_serving_ment = story_response.choices.message.content
+                        ai_serving_ment = llm.invoke(story_prompt).content
                         
                         str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
                         str.chat_message("assistant").write(ai_serving_ment)
@@ -143,17 +135,12 @@ if user_input:
                 
                 대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
                 """
-                chat_response = client.chat.completions.create(
-                    model="llama-3.3-70b",
-                    provider=Airforce,
-                    messages=[{"role": "user", "content": chat_guide_prompt}]
-                )
-                ai_chat_response = chat_response.choices.message.content
+                ai_chat_response = llm.invoke(chat_guide_prompt).content
                 str.chat_message("assistant").write(ai_chat_response)
                 str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
         
         except Exception as api_err:
-            str.error(f"🚨 AI 서비스 통신 에러 발생: {api_err}\n\n무료 서버 공급망의 일시적인 혼잡일 수 있습니다. 잠시 후 다시 시도해 주세요.")
+            str.error(f"🚨 구글 API 통신 에러 발생: {api_err}\n\n배포 서버가 구글 서버와 통신하는 과정에서 거절되었습니다. API 키 자체에 오타가 있거나 무료 계정 한도를 일시 초과했을 수 있습니다.")
 
 # 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
 character_image_url = "https://bing.net" 
@@ -175,5 +162,4 @@ str.markdown(
     """, 
     unsafe_allow_html=True
 )
-
 
