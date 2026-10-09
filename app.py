@@ -1,7 +1,7 @@
 import streamlit as str
 import pandas as pd
-# 🔮 최신 구글 Gemini 스펙에 맞춘 랭체인 클래스 임포트
-from langchain_google_genai import ChatGoogleGenAI 
+# 🔮 구글 Gemini 3.8 모델을 지원하는 랭체인 클래스
+from langchain_google_genai import ChatGoogleGenerativeAI 
 
 # 1. 웹페이지 기본 설정
 str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon="🍚", layout="wide")
@@ -9,18 +9,18 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 인터넷 주소로 작동하는 Google Gemini 최신 모델 연결
+# 🔮 인터넷 주소로 작동하는 Google Gemini 연결 (최신 gemini-3.8-flash 설정)
 @str.cache_resource
 def load_llm():
     try:
         # 스트림릿 서버에 숨겨놓은 안전한 비밀키(Secrets)를 자동으로 가져옵니다.
         api_key = str.secrets["GEMINI_API_KEY"]
-        # 최신 자율 에이전트 최적화 모델인 gemini-3.8-flash를 장착합니다.
-        return ChatGoogleGenAI(model="gemini-3.8-flash", google_api_key=api_key)
+        # 자율 에이전트 및 연쇄 추론 기능에 최적화된 최신 gemini-3.8-flash 모델을 장착합니다.
+        return ChatGoogleGenerativeAI(model="gemini-3.8-flash", google_api_key=api_key)
     except Exception as e:
-        # 내 컴퓨터에서 로컬로 테스트할 때는 환경변수의 키를 찾거나 기본 인스턴스를 반환합니다.
+        # 내 컴퓨터에서 로컬로 테스트할 때는 .env나 시스템 환경변수의 키를 찾습니다.
         try:
-            return ChatGoogleGenAI(model="gemini-3.8-flash")
+            return ChatGoogleGenerativeAI(model="gemini-3.8-flash")
         except:
             return None
 
@@ -65,7 +65,6 @@ if user_input:
         [현재 사용자 질문]: {user_input}
         [분류 결과]:"""
         
-        # 🔮 ChatGoogleGenAI의 출력 결과에서 텍스트 정제 (.content 추출)
         user_intent = llm.invoke(routing_prompt).content.strip()
         
         # 🎯 시나리오 A: 맛집 추천 실행
@@ -97,7 +96,7 @@ if user_input:
                     filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                     final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                     
-                    # 🛠️ 이전 답변의 iloc 버그 수정 (.iloc[0] 정상 반영)
+                    # 🛠️ 중요 픽스: 판다스 오동작 방지를 위해 iloc 가공 방식을 행 순서(0)로 정확히 정정
                     top_restaurant_name = final_result.iloc[0]['name']
                     
                     story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
@@ -154,4 +153,5 @@ str.markdown(
     """, 
     unsafe_allow_html=True
 ) 
+
 
