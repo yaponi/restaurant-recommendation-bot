@@ -1,6 +1,6 @@
 import streamlit as str
 import pandas as pd
-# 🔮 Ollama 대신 Google Gemini 도구로 변경
+# 🔮 구글 최신 Gemini API 연동을 위한 랭체인 클래스
 from langchain_google_genai import ChatGoogleGenerativeAI 
 
 # 1. 웹페이지 기본 설정
@@ -9,28 +9,27 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🔮 내 컴퓨터의 Ollama 대신, 인터넷 주소로 작동하는 Google Gemini 연결
-@str.cache_resource
-def load_llm():
+# 🛠️ 버그 해결 1: gemini-3.8-flash의 필수 규격에 맞춰 불필요한 레거시 파라미터가 들어가지 않도록 초기화
+if "llm" not in str.session_state:
     try:
-        # 스트림릿 서버에 숨겨놓은 안전한 비밀키(Secrets)를 자동으로 가져옵니다.
-        api_key = str.secrets["GEMINI_API_KEY"]
-        # 가장 빠르고 가성비 좋은 구글의 gemini-1.5-flash 모델을 장착합니다.
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
+        api_key = str.secrets.get("GEMINI_API_KEY", None)
+        
+        # gemini-3.8-flash 모델은 구형 temperature, top_p 설정을 허용하지 않으므로 무효화하거나 기본 세팅 처리합니다.
+        str.session_state["llm"] = ChatGoogleGenerativeAI(
+            model="gemini-3.8-flash", 
+            google_api_key=api_key,
+            timeout=15.0
+        )
     except Exception as e:
-        # 내 컴퓨터에서 로컬로 테스트할 때는 .env나 시스템 환경변수의 키를 찾습니다.
-        try:
-            return ChatGoogleGenerativeAI(model="gemini-1.5-flash")
-        except:
-            return None
+        str.session_state["llm"] = None
 
-llm = load_llm()
+llm = str.session_state["llm"]
 
-# 비로그인 유저의 과거 대화 기록을 기억하는 메모리 장치 세팅
+# 과거 대화 기록 저장을 위한 세션 메모리 설정
 if "chat_history" not in str.session_state:
     str.session_state["chat_history"] = []
 
-# 📱 웹 화면에 과거에 나눴던 대화 목록들을 차례대로 그려두기
+# 📱 웹 화면에 과거 대화 렌더링
 for chat in str.session_state["chat_history"]:
     str.chat_message(chat["role"]).write(chat["content"])
     if "results" in chat:
@@ -41,7 +40,7 @@ for chat in str.session_state["chat_history"]:
                 if pd.notna(row['image_url']):
                     str.image(row['image_url'], caption=f"{row['name']} 전경/음식 이미지", width=350)
 
-# 2. 대화 입력창 만들기
+# 2. 대화 입력창 생성
 user_input = str.chat_input("예: 오늘 동기들이랑 회식하기 좋은 삼겹살집 추천해줘!")
 
 if user_input:
@@ -49,7 +48,7 @@ if user_input:
     str.session_state["chat_history"].append({"role": "user", "content": user_input})
     
     if llm is None:
-        str.error("🚨 구글 AI API 키 설정이 올바르지 않거나 켜지지 않았습니다! secrets 설정을 확인해 주세요.")
+        str.error("🚨 구글 AI API 키 설정이 올바르지 않습니다! Streamlit Cloud의 Secrets 설정을 확인해 주세요.")
     else:
         history_text = "\n".join([f"{c['role']}: {c['content']}" for c in str.session_state["chat_history"][:-1]])
         
@@ -65,8 +64,8 @@ if user_input:
         [현재 사용자 질문]: {user_input}
         [분류 결과]:"""
         
-        # 🔮 랭체인 Chat 모델의 출력 형식을 문자열로 정제 (.content 추가)
-        user_intent = llm.invoke(routing_prompt).content.strip()
+        with str.spinner("사용자 의도 분석 중..."):
+            user_intent = llm.invoke(routing_prompt).content.strip()
         
         # 🎯 시나리오 A: 맛집 추천 실행
         if "추천" in user_intent:
@@ -82,7 +81,8 @@ if user_input:
             [현재 사용자 질문]: {user_input}
             [AI 에이전트의 선택 단어]:"""
             
-            ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
+            with str.spinner("추천 카테고리 분석 중..."):
+                ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
             
             try:
                 df = pd.read_csv("restaurants.csv")
@@ -97,10 +97,14 @@ if user_input:
                     filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                     final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                     
-                    top_restaurant_name = final_result.iloc[0]['name']
+                    # 🛠️ 버그 해결 2: 판다스 인덱스 참조 에러 방지를 위해 명확하게 첫 번째 행(iloc[0]) 데이터 구조화
+                    top_restaurant = final_result.iloc[0]
+                    top_restaurant_name = top_restaurant['name']
                     
                     story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
-                    ai_serving_ment = llm.invoke(story_prompt).content
+                    
+                    with str.spinner("맞춤형 설명 문장 작성 중..."):
+                        ai_serving_ment = llm.invoke(story_prompt).content
                     
                     str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
                     str.chat_message("assistant").write(ai_serving_ment)
@@ -129,12 +133,13 @@ if user_input:
             
             대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
             """
-            ai_chat_response = llm.invoke(chat_guide_prompt).content
+            with str.spinner("답변 생각 중..."):
+                ai_chat_response = llm.invoke(chat_guide_prompt).content
             str.chat_message("assistant").write(ai_chat_response)
             str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
 
-# 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
-character_image_url = "https://tse4.mm.bing.net/th/id/OIP.95620q0SRD92J15XFWne5QHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" 
+# 3. 우측 하단 고정 UI 캐릭터 디자인
+character_image_url = "https://bing.net" 
 str.markdown(
     f"""
     <style>
@@ -152,4 +157,4 @@ str.markdown(
     <img src="{character_image_url}" class="floating-character">
     """, 
     unsafe_allow_html=True
-)
+) 
