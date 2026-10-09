@@ -1,92 +1,157 @@
-import streamlit as st
+import streamlit as str
 import pandas as pd
-from langchain_google_genai import ChatGoogleGenerativeAI 
+# 🔮 최신 구글 Gemini 스펙에 맞춘 랭체인 클래스 임포트
+from langchain_google_genai import ChatGoogleGenAI 
 
 # 1. 웹페이지 기본 설정
-st.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon="🍚", layout="wide")
+str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon="🍚", layout="wide")
 
-st.title("🤖 나만의 AI 맛집 에이전트 챗봇")
-st.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 준비된 맛집 데이터를 기반으로 추천해 드립니다!")
+str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
+str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 📂 [Pandas 연동] 준비하신 restaurant.csv 파일 읽어오기
-# 파일이 없어도 에러가 나지 않도록 try-except로 안전하게 감쌌습니다.
-try:
-    df = pd.read_csv("restaurants.csv")
-    # 챗봇이 참고할 수 있도록 데이터프레임의 내용을 텍스트(문자열)로 변환해 둡니다.
-    restaurant_info = df.to_string(index=False)
-except Exception as e:
-    df = None
-    restaurant_info = "현재 등록된 맛집 CSV 데이터를 불러올 수 없습니다."
-
-# 🔮 구글 API 로드 로직 최적화 및 방어 코드 구축
-@st.cache_resource
+# 🔮 인터넷 주소로 작동하는 Google Gemini 최신 모델 연결
+@str.cache_resource
 def load_llm():
-    api_key = None
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        
-    if not api_key:
-        st.error("🚨 Streamlit Cloud 설정의 'Secrets' 금고에 GEMINI_API_KEY가 등록되지 않았습니다! 관리자 화면에서 키를 주입해 주세요.")
-        return None
-        
     try:
-        return ChatGoogleGenerativeAI(model="gemini-3.8-flash", google_api_key=api_key)
-    except Exception as init_err:
-        st.error(f"🚨 모델 초기화 중 오류가 발생했습니다: {init_err}")
-        return None
+        # 스트림릿 서버에 숨겨놓은 안전한 비밀키(Secrets)를 자동으로 가져옵니다.
+        api_key = str.secrets["GEMINI_API_KEY"]
+        # 최신 자율 에이전트 최적화 모델인 gemini-3.8-flash를 장착합니다.
+        return ChatGoogleGenAI(model="gemini-3.8-flash", google_api_key=api_key)
+    except Exception as e:
+        # 내 컴퓨터에서 로컬로 테스트할 때는 환경변수의 키를 찾거나 기본 인스턴스를 반환합니다.
+        try:
+            return ChatGoogleGenAI(model="gemini-3.8-flash")
+        except:
+            return None
 
 llm = load_llm()
 
-# 💬 대화 기록 저장을 위한 Streamlit Session State 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# 비로그인 유저의 과거 대화 기록을 기억하는 메모리 장치 세팅
+if "chat_history" not in str.session_state:
+    str.session_state["chat_history"] = []
 
-# 이전 대화 내용들을 화면에 다시 그려주기
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# 📱 웹 화면에 과거에 나눴던 대화 목록들을 차례대로 그려두기
+for chat in str.session_state["chat_history"]:
+    str.chat_message(chat["role"]).write(chat["content"])
+    if "results" in chat:
+        for index, row in chat["results"].iterrows():
+            with str.expander(f"👑 {row['name']} ({row['category']}) - 점수: {row['score']:.1f}점"):
+                str.write(f"⭐️ **대중 평점:** {row['rating']}점 / 💬 **리뷰 수:** {row['review_count']}개")
+                str.write(f"🏷️ **이 식당의 특징:** {row['tags']}")
+                if pd.notna(row['image_url']):
+                    str.image(row['image_url'], caption=f"{row['name']} 전경/음식 이미지", width=350)
 
-# ⌨️ 사용자의 질문 입력창
-if user_input := st.chat_input("맛집에 대해 물어보세요! (예: 정문 근처 가성비 좋은 식당 추천해줘)"):
-    
-    # 1. 사용자 질문을 화면에 띄우고 저장
-    with st.chat_message("user"):
-        st.markdown(user_input)
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    
-    # 2. AI에게 넘겨줄 질문 구성 (우리가 불러온 CSV 맛집 데이터를 주입합니다)
-    # AI가 외부 지식이 아니라, 사용자가 만든 csv 정보를 바탕으로 답변하게 만드는 프롬프트 기법입니다.
-    system_prompt = f"""
-    너는 대구 복현동 영진전문대학교 맛집 추천 전문 AI 비서야.
-    아래에 제공되는 우리의 공식 맛집 데이터 파일(CSV 내용)을 반드시 참고해서 사용자의 질문에 친절하게 답변해줘.
-    만약 데이터에 없는 식당을 물어보면 제공된 데이터 내에서 최대한 비슷한 곳을 추천해주거나 정중히 모른다고 해줘.
+# 2. 대화 입력창 만들기
+user_input = str.chat_input("예: 오늘 동기들이랑 회식하기 좋은 삼겹살집 추천해줘!")
 
-    [우리 대학교 맛집 데이터 리스트]
-    {restaurant_info}
+if user_input:
+    str.chat_message("user").write(user_input)
+    str.session_state["chat_history"].append({"role": "user", "content": user_input})
     
-    사용자 질문: {user_input}
-    """
-    
-    # 3. AI 답변 생성 (실시간 스트리밍 적용 및 리스트 결합 오류 수정)
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
+    if llm is None:
+        str.error("🚨 구글 AI API 키 설정이 올바르지 않거나 켜지지 않았습니다! secrets 설정을 확인해 주세요.")
+    else:
+        history_text = "\n".join([f"{c['role']}: {c['content']}" for c in str.session_state["chat_history"][:-1]])
         
-        try:
-            # 주입된 데이터를 포함한 system_prompt를 모델에 던집니다.
-            for chunk in llm.stream(system_prompt):
-                # 💡 핵심 수정: chunk.content가 리스트이거나 비어있을 때를 대비해 확실하게 str 타입만 걸러서 더합니다.
-                if chunk.content and isinstance(chunk.content, str):
-                    full_response += chunk.content
-                    message_placeholder.markdown(full_response + "▌")
-            
-            # 최종 완성본 출력
-            message_placeholder.markdown(full_response)
-            
-            # 4. AI 답변을 대화 기록에 저장
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-        except Exception as e:
-            st.error(f"⚠️ 답변을 생성하는 도중 오류가 발생했습니다: {e}")
+        routing_prompt = f"""
+        너는 사용자의 현재 의도를 분류하는 판단관이야. 과거 대화 내용의 맥락을 고려해서 현재 질문을 분석해야 해.
+        사용자가 대형 맛집 리스트 추천을 원하는 상황이거나, 과거에 맛집을 찾던 대화의 연장선상이라면 '추천'을 출력해줘.
+        만약 단순한 인사나 맛집과 상관없는 진짜 일상 대화라면 '잡담'을 출력해줘.
+        설명 없이 오직 '추천' 또는 '잡담' 둘 중 하나의 단어만 출력해.
 
+        [과거 대화 기록]:
+        {history_text}
+        
+        [현재 사용자 질문]: {user_input}
+        [분류 결과]:"""
+        
+        # 🔮 ChatGoogleGenAI의 출력 결과에서 텍스트 정제 (.content 추출)
+        user_intent = llm.invoke(routing_prompt).content.strip()
+        
+        # 🎯 시나리오 A: 맛집 추천 실행
+        if "추천" in user_intent:
+            tag_prompt = f"""
+            너는 사용자의 질문과 과거 대화 맥락을 분석해서 맛집 검색용 키워드 태그를 딱 하나만 뽑아내는 천재 에이전트야.
+            유저의 이전 대화와 현재 답변을 종합해서 아래 목록 중 하나만 골라야 해.
+            설명 없이 오직 단어 '한 개'만 출력해.
+
+            [선택 가능한 엑셀 태그 목록]: 상견례, 데이트, 회식, 카페, 혼밥, 가족식사, 가성비
+            [과거 대화 기록]:
+            {history_text}
+            
+            [현재 사용자 질문]: {user_input}
+            [AI 에이전트의 선택 단어]:"""
+            
+            ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
+            
+            try:
+                df = pd.read_csv("restaurants.csv")
+                filtered_df = df[df['tags'].str.contains(ai_extracted_tag, na=False)].copy()
+                
+                if filtered_df.empty:
+                    fail_prompt = f"너는 다정한 매니저야. '{ai_extracted_tag}'에 맞는 맛집이 없어. 정중히 양해를 구하는 멘트를 2문장 이내로 써줘."
+                    ai_reply = llm.invoke(fail_prompt).content
+                    str.chat_message("assistant").write(ai_reply)
+                    str.session_state["chat_history"].append({"role": "assistant", "content": ai_reply})
+                else:
+                    filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
+                    final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
+                    
+                    # 🛠️ 이전 답변의 iloc 버그 수정 (.iloc[0] 정상 반영)
+                    top_restaurant_name = final_result.iloc[0]['name']
+                    
+                    story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
+                    ai_serving_ment = llm.invoke(story_prompt).content
+                    
+                    str.chat_message("assistant").write(f"🧠 **AI 에이전트 연속 문맥 분석:** 과거 대화를 바탕으로 '[{ai_extracted_tag}]' 상황에 어울리는 최적의 맛집 랭킹을 가져왔습니다.")
+                    str.chat_message("assistant").write(ai_serving_ment)
+                    
+                    for index, row in final_result.iterrows():
+                        with str.expander(f"👑 {row['name']} ({row['category']}) - 점수: {row['score']:.1f}점"):
+                            str.write(f"⭐️ **대중 평점:** {row['rating']}점 / 💬 **리뷰 수:** {row['review_count']}개")
+                            str.write(f"🏷️ **이 식당의 특징:** {row['tags']}")
+                            if pd.notna(row['image_url']):
+                                str.image(row['image_url'], caption=f"{row['name']} 전경/음식 이미지", width=350)
+                                
+                    str.session_state["chat_history"].append({
+                        "role": "assistant", 
+                        "content": f"🧠 AI 분석 완료: [{ai_extracted_tag}] 상황 추천\n" + ai_serving_ment,
+                        "results": final_result
+                    })
+            except FileNotFoundError:
+                str.error("restaurants.csv 파일이 없습니다.")
+                
+        # 🎯 시나리오 B: 일상 대화 및 유도
+        else:
+            chat_guide_prompt = f"""
+            너는 대구 복현동/영진전문대 맛집 웹의 AI 마스코트야. 이전 대화 기록을 참고해서 유저의 말에 대답해야 해.
+            [과거 기록]: {history_text}
+            [현재 유저의 말]: "{user_input}"
+            
+            대화를 친절하게 받아주면서, 자연스럽게 복현동 맛집 추천(데이트, 회식, 혼밥 등)으로 유도하는 대답을 3문장 이내로 해줘.
+            """
+            ai_chat_response = llm.invoke(chat_guide_prompt).content
+            str.chat_message("assistant").write(ai_chat_response)
+            str.session_state["chat_history"].append({"role": "assistant", "content": ai_chat_response})
+
+# 3. 🐱 우측 하단 가쪽에 고화질 냥캣 캐릭터 이미지 고정
+character_image_url = "https://bing.net" 
+str.markdown(
+    f"""
+    <style>
+    .floating-character {{
+        position: fixed; 
+        bottom: 20px; 
+        right: 20px; 
+        z-index: 999; 
+        width: 220px; 
+        height: auto; 
+        mix-blend-mode: multiply; 
+        border: none; 
+    }}
+    </style>
+    <img src="{character_image_url}" class="floating-character">
+    """, 
+    unsafe_allow_html=True
+) 
 
