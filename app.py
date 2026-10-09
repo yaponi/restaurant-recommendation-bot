@@ -8,12 +8,10 @@ str.set_page_config(page_title="영진전문대 맛집 에이전트", page_icon=
 str.title("🤖 나만의 AI 맛집 에이전트 챗봇")
 str.write("안녕하세요! 대구 복현동/영진전문대 맛집 전문 AI 비서입니다. 아무 말이나 편하게 걸어주세요!")
 
-# 🛠️ 안전한 LLM 로드 세팅
+# 안전한 LLM 로드 세팅
 if "llm" not in str.session_state:
     try:
-        # secrets에서 키를 안전하게 가져옵니다.
         api_key = str.secrets.get("GEMINI_API_KEY", None)
-        
         if api_key:
             str.session_state["llm"] = ChatGoogleGenerativeAI(
                 model="gemini-3.8-flash", 
@@ -66,13 +64,13 @@ if user_input:
         [현재 사용자 질문]: {user_input}
         [분류 결과]:"""
         
-        # 🛠️ 68라인 ClientError 방지를 위한 내부 try-except 감싸기
+        # 🛠️ 수정한 예외 처리: 내장 함수 str()을 쓰지 않고 포맷팅하여 AttributeError 근절
         try:
             with str.spinner("사용자 의도 분석 중..."):
                 user_intent = llm.invoke(routing_prompt).content.strip()
         except Exception as api_err:
-            str.error(f"🚨 Google Gemini API 통신 실패: API 키가 누락되었거나 비정상적입니다. ({str(api_err)})")
-            user_intent = "잡담" # 에러 시 크래시 방지를 위한 기본값 우회
+            str.error(f"🚨 Google Gemini API 통신 실패: API 키가 누락되었거나 비정상적입니다. 에러 종류: {api_err}")
+            user_intent = "잡담" 
         
         # 🎯 시나리오 A: 맛집 추천 실행
         if "추천" in user_intent:
@@ -92,7 +90,7 @@ if user_input:
                 with str.spinner("추천 카테고리 분석 중..."):
                     ai_extracted_tag = llm.invoke(tag_prompt).content.strip()
             except Exception:
-                ai_extracted_tag = "가성비" # API 장애 시 기본 태그 백업
+                ai_extracted_tag = "가성비" 
             
             try:
                 df = pd.read_csv("restaurants.csv")
@@ -104,7 +102,7 @@ if user_input:
                     filtered_df['score'] = (filtered_df['rating'] * 10) + (filtered_df['review_count'] * 0.01)
                     final_result = filtered_df.sort_values(by='score', ascending=False).head(5)
                     
-                    # 🛠️ 판다스 iloc 버그 원천 해결: 첫 행의 특정 컬럼값을 완벽하게 추출
+                    # 🛠️ 판다스 인덱싱 에러 완벽 해결: .iloc[0]을 명시하여 첫 번째 행의 'name' 컬럼값 안전 추출
                     top_restaurant_name = final_result.iloc[0]['name']
                     
                     story_prompt = f"너는 다정한 맛집 매니저야. 과거 대화 맥락({history_text})과 현재 답변({user_input})을 조합해서, 왜 1등으로 뽑힌 '{top_restaurant_name}'이 어울리는지 2문장 이내로 설명해줘."
@@ -171,3 +169,4 @@ str.markdown(
     """, 
     unsafe_allow_html=True
 ) 
+
